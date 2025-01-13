@@ -11,6 +11,7 @@ from typing import Any, Dict, Generator, ItemsView, List, Tuple
 
 import numpy as np
 import torch
+import gc
 
 # Very lightly adapted from https://github.com/facebookresearch/segment-anything/blob/main/segment_anything/utils/amg.py
 
@@ -154,6 +155,20 @@ def rle_to_mask(rle: Dict[str, Any]) -> np.ndarray:
 def area_from_rle(rle: Dict[str, Any]) -> int:
     return sum(rle["counts"][1::2])
 
+def is_bg_mask_mine(mask, thresh=1.0 / 10.0):
+    return mask.mean((1, 2)) > thresh
+    
+def clear_gpu_memory():
+    """
+    Clears the GPU memory by collecting garbage and emptying the CUDA cache.
+
+    No parameters are required for this function.
+
+    Returns:
+        None
+    """
+    gc.collect()
+    torch.cuda.empty_cache()
 
 def calculate_stability_score(
     masks: torch.Tensor, mask_threshold: float, threshold_offset: float

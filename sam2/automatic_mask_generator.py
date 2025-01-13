@@ -22,6 +22,8 @@ from sam2.utils.amg import (
     calculate_stability_score,
     coco_encode_rle,
     generate_crop_boxes,
+    is_bg_mask_mine,
+    clear_gpu_memory,
     is_box_near_crop_edge,
     mask_to_rle_pytorch,
     MaskData,
@@ -167,7 +169,7 @@ class SAM2AutomaticMaskGenerator:
         return cls(sam_model, **kwargs)
 
     @torch.no_grad()
-    def generate(self, image: np.ndarray) -> List[Dict[str, Any]]:
+    def generate(self, image: np.ndarray, clear_memory: bool=False) -> List[Dict[str, Any]]:
         """
         Generates masks for the given image.
 
@@ -218,6 +220,9 @@ class SAM2AutomaticMaskGenerator:
                 "crop_box": box_xyxy_to_xywh(mask_data["crop_boxes"][idx]).tolist(),
             }
             curr_anns.append(ann)
+
+        if clear_memory:
+            clear_gpu_memory()
 
         return curr_anns
 
@@ -326,6 +331,13 @@ class SAM2AutomaticMaskGenerator:
             low_res_masks=low_res_masks.flatten(0, 1),
         )
         del masks
+
+        # Remove background masks
+        # TODO thresh should be a class attribute
+        keep_mask = ~is_bg_mask_mine(
+            (data["masks"] > self.mask_threshold).float(), thresh=1.0 / 3.0
+        )
+        data.filter(keep_mask)
 
         if not self.use_m2m:
             # Filter by predicted IoU

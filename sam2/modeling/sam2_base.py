@@ -4,6 +4,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+from line_profiler import profile
 import torch
 import torch.distributed
 import torch.nn.functional as F
@@ -254,6 +255,7 @@ class SAM2Base(torch.nn.Module):
         else:
             self.obj_ptr_tpos_proj = torch.nn.Identity()
 
+    @profile
     def _forward_sam_heads(
         self,
         backbone_features,
