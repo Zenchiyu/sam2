@@ -4,6 +4,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+from line_profiler import profile
 import warnings
 from collections import OrderedDict
 
@@ -41,23 +42,26 @@ class SAM2VideoPredictor(SAM2Base):
     @torch.inference_mode()
     def init_state(
         self,
-        video_path,
+        initial_frame,
         offload_video_to_cpu=False,
         offload_state_to_cpu=False,
-        async_loading_frames=False,
+        num_frames=int(1e5),
+        video_height=210,
+        video_width=160
     ):
         """Initialize an inference state."""
         compute_device = self.device  # device of the model
-        images, video_height, video_width = load_video_frames(
-            video_path=video_path,
-            image_size=self.image_size,
-            offload_video_to_cpu=offload_video_to_cpu,
-            async_loading_frames=async_loading_frames,
-            compute_device=compute_device,
-        )
+        # images, video_height, video_width = load_video_frames(
+        #     video_path=video_path,
+        #     image_size=self.image_size,
+        #     offload_video_to_cpu=offload_video_to_cpu,
+        #     async_loading_frames=async_loading_frames,
+        #     compute_device=compute_device,
+        # )
         inference_state = {}
-        inference_state["images"] = images
-        inference_state["num_frames"] = len(images)
+        inference_state["current_frame"] = initial_frame
+        # inference_state["images"] = images
+        inference_state["num_frames"] = num_frames
         # whether to offload the video frames to CPU memory
         # turning on this option saves the GPU memory with only a very small overhead
         inference_state["offload_video_to_cpu"] = offload_video_to_cpu
@@ -675,6 +679,7 @@ class SAM2VideoPredictor(SAM2Base):
     @torch.inference_mode()
     def reset_state(self, inference_state):
         """Remove all input points or mask in all frames throughout the video."""
+        # NOTE does not remove cached features
         self._reset_tracking_results(inference_state)
         # Remove all object ids
         inference_state["obj_id_to_idx"].clear()
@@ -710,7 +715,8 @@ class SAM2VideoPredictor(SAM2Base):
         if backbone_out is None:
             # Cache miss -- we will run inference on a single image
             device = inference_state["device"]
-            image = inference_state["images"][frame_idx].to(device).float().unsqueeze(0)
+            image = inference_state["current_frame"]
+            image = image.to(device).float()
             backbone_out = self.forward_image(image)
             # Cache the most recent frame's feature (for repeated interactions with
             # a frame; we can use an LRU cache for more frames in the future).
@@ -731,6 +737,7 @@ class SAM2VideoPredictor(SAM2Base):
             expanded_backbone_out["vision_pos_enc"][i] = pos
 
         features = self._prepare_backbone_features(expanded_backbone_out)
+        # prepend the image to the features
         features = (expanded_image,) + features
         return features
 
