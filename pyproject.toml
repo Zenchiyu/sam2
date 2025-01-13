@@ -4,3 +4,17 @@ requires = [
     "torch>=2.5.1",
     ]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "sam2"
+version = "1.0"
+description = "SAM 2: Segment Anything in Images and Videos"
+readme = "README.md"
+license = {text = "Apache 2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "pyproject-toml>=0.1.0",
+    "torch==2.5.1",
+    "torchvision>=0.20.1",
+]
+

@@ -1,3 +1,5 @@
+EDIT: This fork was modified by Youssef Saied and Stephane Nguyen. One can now use uv pip install -e . after using uv venv
+
 # SAM 2: Segment Anything in Images and Videos
 
 **[AI at Meta, FAIR](https://ai.meta.com/research/)**
