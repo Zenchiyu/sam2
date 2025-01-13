@@ -1,4 +1,4 @@
-EDIT: This fork was modified by Youssef Saied and Stephane Nguyen. One can now use `uv pip install -e .` after using `uv venv --python 3.11.6`
+EDIT: This fork was modified by Youssef Saied and Stephane Nguyen. One can now use `uv pip install -e .` after using `uv venv --python 3.11.10`
 
 # SAM 2: Segment Anything in Images and Videos
 
