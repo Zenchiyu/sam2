@@ -174,6 +174,7 @@ class SAM2VideoPredictor(SAM2Base):
         box=None,
     ):
         """Add new points to a frame."""
+        # NOTE: Careful with inference_state["current_frame"], it needs to correspond to the correct frame_idx !!
         obj_idx = self._obj_id_to_idx(inference_state, obj_id)
         point_inputs_per_frame = inference_state["point_inputs_per_obj"][obj_idx]
         mask_inputs_per_frame = inference_state["mask_inputs_per_obj"][obj_idx]
@@ -309,6 +310,7 @@ class SAM2VideoPredictor(SAM2Base):
         mask,
     ):
         """Add new mask to a frame."""
+        # NOTE: Careful with inference_state["current_frame"], it needs to correspond to the correct frame_idx !!
         obj_idx = self._obj_id_to_idx(inference_state, obj_id)
         point_inputs_per_frame = inference_state["point_inputs_per_obj"][obj_idx]
         mask_inputs_per_frame = inference_state["mask_inputs_per_obj"][obj_idx]
@@ -512,6 +514,8 @@ class SAM2VideoPredictor(SAM2Base):
                             mode="bilinear",
                             align_corners=False,
                         )
+                        # TODO: inference_state["current_frame"] might not correspond to the frame_idx-th frame !!
+                        print("here broken, needs correct image")
                         maskmem_features, maskmem_pos_enc = self._run_memory_encoder(
                             inference_state=inference_state,
                             frame_idx=frame_idx,
@@ -555,6 +559,7 @@ class SAM2VideoPredictor(SAM2Base):
         reverse=False,
     ):
         """Propagate the input points across frames to track in the entire video."""
+        # TODO: currently could be broken due to inference_state["current_frame"]
         self.propagate_in_video_preflight(inference_state)
 
         obj_ids = inference_state["obj_ids"]
@@ -604,6 +609,8 @@ class SAM2VideoPredictor(SAM2Base):
                         )
                 else:
                     storage_key = "non_cond_frame_outputs"
+                    # TODO: inference_state["current_frame"] might not correspond to the frame_idx-th frame !!
+                    print("here broken, needs correct image")
                     current_out, pred_masks = self._run_single_frame_inference(
                         inference_state=inference_state,
                         output_dict=obj_output_dict,

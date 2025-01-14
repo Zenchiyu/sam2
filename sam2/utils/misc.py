@@ -176,6 +176,9 @@ class AsyncVideoFrameLoader:
         return len(self.img_paths)
 
 
+def sort_frames_default(s):
+    return int(os.path.splitext(s)[0])
+
 def sort_atari_frames(s) -> tuple[int, int, int, int]:
     s_ = s.split("_")
     frame_number, episode_number, day, month = (
@@ -197,11 +200,13 @@ def load_video_frames(
     async_loading_frames=False,
     compute_device=torch.device("cuda"),
     max_frame_num_to_track=None,
+    atari=False,
 ):
     """
     Load the video frames from video_path. The frames are resized to image_size as in
     the model and are loaded to GPU if offload_video_to_cpu=False. This is used by the demo.
     """
+    print("Working on non Atari frames")
     is_bytes = isinstance(video_path, bytes)
     is_str = isinstance(video_path, str)
     is_mp4_path = is_str and os.path.splitext(video_path)[-1] in [".mp4", ".MP4"]
@@ -213,6 +218,7 @@ def load_video_frames(
             img_mean=img_mean,
             img_std=img_std,
             compute_device=compute_device,
+            max_frame_num_to_track=max_frame_num_to_track,
         )
     elif is_str and os.path.isdir(video_path):
         return load_video_frames_from_jpg_images(
@@ -223,6 +229,8 @@ def load_video_frames(
             img_std=img_std,
             async_loading_frames=async_loading_frames,
             compute_device=compute_device,
+            max_frame_num_to_track=max_frame_num_to_track,
+            sort_key=sort_frames_default if not atari else sort_atari_frames,
         )
     else:
         raise NotImplementedError(
@@ -238,6 +246,8 @@ def load_video_frames_from_jpg_images(
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
     compute_device=torch.device("cuda"),
+    max_frame_num_to_track=None,
+    sort_key=sort_frames_default,
 ):
     """
     Load the video frames from a directory of JPEG files ("<frame_index>.jpg" format).
@@ -265,7 +275,7 @@ def load_video_frames_from_jpg_images(
         for p in os.listdir(jpg_folder)
         if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG", ".png"]
     ]
-    frame_names.sort(key=sort_atari_frames)
+    frame_names.sort(key=sort_key)
     if max_frame_num_to_track is not None:
         frame_names = frame_names[:max_frame_num_to_track]
     num_frames = len(frame_names)
@@ -306,6 +316,7 @@ def load_video_frames_from_video_file(
     img_mean=(0.485, 0.456, 0.406),
     img_std=(0.229, 0.224, 0.225),
     compute_device=torch.device("cuda"),
+    max_frame_num_to_track=None
 ):
     """Load the video frames from a video file."""
     import decord
@@ -315,10 +326,12 @@ def load_video_frames_from_video_file(
     # Get the original video height and width
     decord.bridge.set_bridge("torch")
     video_height, video_width, _ = decord.VideoReader(video_path).next().shape
-    # Iterate over all frames in the video
+    # Iterate over all (or a part of them) frames in the video
     images = []
-    for frame in decord.VideoReader(video_path, width=image_size, height=image_size):
+    for i, frame in enumerate(decord.VideoReader(video_path, width=image_size, height=image_size)):
         images.append(frame.permute(2, 0, 1))
+        if max_frame_num_to_track is not None and i + 1 >= max_frame_num_to_track:
+            break
 
     images = torch.stack(images, dim=0).float() / 255.0
     if not offload_video_to_cpu:
