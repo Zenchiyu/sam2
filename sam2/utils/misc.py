@@ -137,7 +137,7 @@ class AsyncVideoFrameLoader:
         # to cache it (since it's most likely where the user will click)
         self.__getitem__(0)
         if self.lazy:
-            return 
+            return
 
         # load the rest of frames asynchronously without blocking the session start
         def _load_frames():
@@ -169,7 +169,7 @@ class AsyncVideoFrameLoader:
         if not self.offload_video_to_cpu:
             img = img.to(self.compute_device, non_blocking=True)
         if not self.lazy:
-            self.images[index] = img    # NOTE
+            self.images[index] = img  # NOTE
         return img
 
     def __len__(self):
@@ -178,6 +178,7 @@ class AsyncVideoFrameLoader:
 
 def sort_frames_default(s):
     return int(os.path.splitext(s)[0])
+
 
 def sort_atari_frames(s) -> tuple[int, int, int, int]:
     s_ = s.split("_")
@@ -206,7 +207,10 @@ def load_video_frames(
     Load the video frames from video_path. The frames are resized to image_size as in
     the model and are loaded to GPU if offload_video_to_cpu=False. This is used by the demo.
     """
-    print("Working on non Atari frames")
+    if atari:
+        print("Working on Atari frames")
+    else:
+        print("Working on non Atari frames")
     is_bytes = isinstance(video_path, bytes)
     is_str = isinstance(video_path, str)
     is_mp4_path = is_str and os.path.splitext(video_path)[-1] in [".mp4", ".MP4"]
@@ -316,7 +320,7 @@ def load_video_frames_from_video_file(
     img_mean=(0.485, 0.456, 0.406),
     img_std=(0.229, 0.224, 0.225),
     compute_device=torch.device("cuda"),
-    max_frame_num_to_track=None
+    max_frame_num_to_track=None,
 ):
     """Load the video frames from a video file."""
     import decord
@@ -328,7 +332,9 @@ def load_video_frames_from_video_file(
     video_height, video_width, _ = decord.VideoReader(video_path).next().shape
     # Iterate over all (or a part of them) frames in the video
     images = []
-    for i, frame in enumerate(decord.VideoReader(video_path, width=image_size, height=image_size)):
+    for i, frame in enumerate(
+        decord.VideoReader(video_path, width=image_size, height=image_size)
+    ):
         images.append(frame.permute(2, 0, 1))
         if max_frame_num_to_track is not None and i + 1 >= max_frame_num_to_track:
             break
