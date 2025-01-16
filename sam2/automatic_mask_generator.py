@@ -169,12 +169,20 @@ class SAM2AutomaticMaskGenerator:
         return cls(sam_model, **kwargs)
 
     @torch.no_grad()
-    def generate(self, image: np.ndarray, clear_memory: bool=False) -> List[Dict[str, Any]]:
+    def generate(
+        self,
+        image: np.ndarray,
+        clear_memory: bool = False,
+        return_backbone_out: bool = False,
+    ) -> List[Dict[str, Any]]:
         """
         Generates masks for the given image.
 
         Arguments:
           image (np.ndarray): The image to generate masks for, in HWC uint8 format.
+          clear_memory (bool): clear gpu memory
+          return_backbone_out (bool): return the image backbone_out (only when
+            self.crop_n_layers == 0).
 
         Returns:
            list(dict(str, any)): A list over records for masks. Each record is
@@ -224,6 +232,8 @@ class SAM2AutomaticMaskGenerator:
         if clear_memory:
             clear_gpu_memory()
 
+        if return_backbone_out and self.crop_n_layers == 0:
+            return curr_anns, self.predictor.get_backbone_out()
         return curr_anns
 
     def _generate_masks(self, image: np.ndarray) -> MaskData:

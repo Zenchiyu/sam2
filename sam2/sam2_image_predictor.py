@@ -125,6 +125,7 @@ class SAM2ImagePredictor:
             for feat, feat_size in zip(vision_feats[::-1], self._bb_feat_sizes[::-1])
         ][::-1]
         self._features = {"image_embed": feats[-1], "high_res_feats": feats[:-1]}
+        self._backbone_out = backbone_out
         self._is_image_set = True
         logging.info("Image embeddings computed.")
 
@@ -168,6 +169,7 @@ class SAM2ImagePredictor:
             for feat, feat_size in zip(vision_feats[::-1], self._bb_feat_sizes[::-1])
         ][::-1]
         self._features = {"image_embed": feats[-1], "high_res_feats": feats[:-1]}
+        self._backbone_out = backbone_out
         self._is_image_set = True
         self._is_batch = True
         logging.info("Image embeddings computed.")
@@ -451,6 +453,10 @@ class SAM2ImagePredictor:
             self._features is not None
         ), "Features must exist if an image has been set."
         return self._features["image_embed"]
+
+    def get_backbone_out(self) -> torch.Tensor:
+        """ """
+        return self._backbone_out
 
     @property
     def device(self) -> torch.device:

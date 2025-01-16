@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from tqdm import tqdm
+from typing import List, Optional
 
 from sam2.modeling.sam2_base import NO_OBJ_SCORE, SAM2Base
 from sam2.utils.misc import concat_points, fill_holes_in_mask_scores
@@ -42,12 +43,13 @@ class SAM2VideoPredictor(SAM2Base):
     @torch.inference_mode()
     def init_state(
         self,
-        initial_frame,
-        video_height,  # 210 for Atari
-        video_width,  # 160 for Atari
-        offload_video_to_cpu=False,
-        offload_state_to_cpu=False,
-        num_frames=int(1e5),
+        initial_frame: torch.Tensor,
+        video_height: int,  # 210 for Atari
+        video_width: int,  # 160 for Atari
+        offload_video_to_cpu: bool = False,
+        offload_state_to_cpu: bool = False,
+        num_frames: int = int(1e5),
+        backbone_out: Optional[torch.Tensor] = None,
     ):
         """
         Initialize an inference state.
@@ -96,7 +98,9 @@ class SAM2VideoPredictor(SAM2Base):
         # metadata for each tracking frame (e.g. which direction it's tracked)
         inference_state["frames_tracked_per_obj"] = {}
         # Warm up the visual backbone and cache the image feature on frame 0
-        self._get_image_feature(inference_state, frame_idx=0, batch_size=1)
+        self._get_image_feature(
+            inference_state, frame_idx=0, batch_size=1, backbone_out=backbone_out
+        )
         return inference_state
 
     @classmethod
@@ -169,6 +173,7 @@ class SAM2VideoPredictor(SAM2Base):
         clear_old_points=True,
         normalize_coords=True,
         box=None,
+        backbone_out=None,
     ):
         """Add new points to a frame."""
         obj_idx = self._obj_id_to_idx(inference_state, obj_id)
@@ -276,6 +281,7 @@ class SAM2VideoPredictor(SAM2Base):
             # them into memory.
             run_mem_encoder=False,
             prev_sam_mask_logits=prev_sam_mask_logits,
+            backbone_out=backbone_out,
         )
         # Add the output to the output dict (to be used as future memory)
         obj_temp_output_dict[storage_key][frame_idx] = current_out
@@ -726,21 +732,41 @@ class SAM2VideoPredictor(SAM2Base):
         for v in inference_state["frames_tracked_per_obj"].values():
             v.clear()
 
-    def _get_image_feature(self, inference_state, frame_idx, batch_size):
+    def _cache_features_in_inference_state(
+        self, inference_state, frame_idx, image, backbone_out
+    ):
+        # Cache the most recent frame's feature (for repeated interactions with
+        # a frame; we can use an LRU cache for more frames in the future).
+        inference_state["cached_features"] = {frame_idx: (image, backbone_out)}
+
+    def _get_image_feature(
+        self,
+        inference_state,
+        frame_idx,
+        batch_size,
+        backbone_out=None,
+    ):
         """Compute the image features on a given frame."""
         # Look up in the cache first
-        image, backbone_out = inference_state["cached_features"].get(
+        image, retrieved_backbone_out = inference_state["cached_features"].get(
             frame_idx, (None, None)
         )
-        if backbone_out is None:
-            # Cache miss -- we will run inference on a single image
+
+        # Cache miss
+        if retrieved_backbone_out is None:
             device = inference_state["device"]
             image = inference_state["images"][frame_idx]
             image = image.to(device).float()
-            backbone_out = self.forward_image(image)
-            # Cache the most recent frame's feature (for repeated interactions with
-            # a frame; we can use an LRU cache for more frames in the future).
-            inference_state["cached_features"] = {frame_idx: (image, backbone_out)}
+
+            if backbone_out is None:
+                # Run inference on a single image if we didn't previously
+                # compute backbone_out and give it as input to this method
+                backbone_out = self.forward_image(image)
+                self._cache_features_in_inference_state(
+                    inference_state, frame_idx, image, backbone_out
+                )
+        else:
+            backbone_out = retrieved_backbone_out
 
         # expand the features to have the same dimension as the number of objects
         expanded_image = image.expand(batch_size, -1, -1, -1)
@@ -773,6 +799,7 @@ class SAM2VideoPredictor(SAM2Base):
         reverse,
         run_mem_encoder,
         prev_sam_mask_logits=None,
+        backbone_out=None,
     ):
         """Run tracking on a single frame based on current inputs and previous memory."""
         # Retrieve correct image features
@@ -782,7 +809,9 @@ class SAM2VideoPredictor(SAM2Base):
             current_vision_feats,
             current_vision_pos_embeds,
             feat_sizes,
-        ) = self._get_image_feature(inference_state, frame_idx, batch_size)
+        ) = self._get_image_feature(
+            inference_state, frame_idx, batch_size, backbone_out=backbone_out
+        )
 
         # point and mask should not appear as input simultaneously on the same frame
         assert point_inputs is None or mask_inputs is None
