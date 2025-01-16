@@ -388,3 +388,37 @@ def concat_points(old_point_inputs, new_points, new_labels):
         labels = torch.cat([old_point_inputs["point_labels"], new_labels], dim=1)
 
     return {"point_coords": points, "point_labels": labels}
+
+
+def clean_inference(inference_state, frames_to_keep=100):
+    """
+    Clean at frequent intervals where we only keep the
+    last frames_to_keep non-conditional frame outputs.
+
+    When not cleaning, the inference state is returned as is.
+    """
+    if inference_state["cleaning_counter"] >= frames_to_keep:
+        # Clean
+        keys_to_remove = ["non_cond_frame_outputs"]
+        for obj_idx in inference_state["output_dict_per_obj"]:
+            # print("Cleaning")
+            # print(
+            #     f'Before: {inference_state["output_dict_per_obj"][0]["non_cond_frame_outputs"].keys()}'
+            # )
+            for key in keys_to_remove:
+                if key in inference_state["output_dict_per_obj"][obj_idx]:
+                    frame_indices = sorted(
+                        inference_state["output_dict_per_obj"][obj_idx][key].keys()
+                    )
+                    for frame_idx in frame_indices[:-frames_to_keep]:
+                        inference_state["output_dict_per_obj"][obj_idx][key].pop(
+                            frame_idx, None
+                        )
+            # print(
+            #     f'After: {inference_state["output_dict_per_obj"][0]["non_cond_frame_outputs"].keys()}'
+            # )
+        # Reset counter
+        inference_state["cleaning_counter"] = 0
+
+    inference_state["cleaning_counter"] += 1
+    return inference_state
