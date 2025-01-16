@@ -510,6 +510,7 @@ class SAM2VideoPredictor(SAM2Base):
                             mode="bilinear",
                             align_corners=False,
                         )
+                        # TODO: this might break here if I don't retain old frames ?
                         maskmem_features, maskmem_pos_enc = self._run_memory_encoder(
                             inference_state=inference_state,
                             frame_idx=frame_idx,
@@ -601,7 +602,8 @@ class SAM2VideoPredictor(SAM2Base):
     ):
         obj_ids = inference_state["obj_ids"]
         batch_size = self._get_obj_num(inference_state)
-        inference_state["images"][frame_idx] = image.unsqueeze(0)  # TODO: clean/clear ?
+        # inference_state["images"][frame_idx] = image.unsqueeze(0)  # TODO: clean/clear ?
+        inference_state["images"] = {frame_idx: image.unsqueeze(0)}
 
         pred_masks_per_obj = [None] * batch_size
         for obj_idx in range(batch_size):
