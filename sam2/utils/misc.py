@@ -91,7 +91,9 @@ def mask_to_box(masks: torch.Tensor):
 
 def _load_img_as_tensor(img_path, image_size):
     img_pil = Image.open(img_path)
-    img_np = np.array(img_pil.convert("RGB").resize((image_size, image_size)))
+    img_np = np.array(
+        img_pil.convert("RGB").resize((image_size, image_size), Image.NEAREST)
+    )  # SUPER NOTE
     if img_np.dtype == np.uint8:  # np.uint8 is expected for JPEG images
         img_np = img_np / 255.0
     else:
@@ -114,6 +116,7 @@ class AsyncVideoFrameLoader:
         img_mean,
         img_std,
         compute_device,
+        lazy=True,  # NOTE
     ):
         self.img_paths = img_paths
         self.image_size = image_size
@@ -128,10 +131,13 @@ class AsyncVideoFrameLoader:
         self.video_height = None
         self.video_width = None
         self.compute_device = compute_device
+        self.lazy = lazy
 
         # load the first frame to fill video_height and video_width and also
         # to cache it (since it's most likely where the user will click)
         self.__getitem__(0)
+        if self.lazy:
+            return
 
         # load the rest of frames asynchronously without blocking the session start
         def _load_frames():
@@ -162,11 +168,16 @@ class AsyncVideoFrameLoader:
         img /= self.img_std
         if not self.offload_video_to_cpu:
             img = img.to(self.compute_device, non_blocking=True)
-        self.images[index] = img
+        if not self.lazy:
+            self.images[index] = img  # NOTE
         return img
 
     def __len__(self):
-        return len(self.images)
+        return len(self.img_paths)
+
+
+def sort_frames_default(s):
+    return int(os.path.splitext(s)[0])
 
 
 def load_video_frames(
@@ -177,6 +188,8 @@ def load_video_frames(
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
     compute_device=torch.device("cuda"),
+    max_frame_num_to_track=None,
+    sort_key=sort_frames_default,
 ):
     """
     Load the video frames from video_path. The frames are resized to image_size as in
@@ -193,6 +206,7 @@ def load_video_frames(
             img_mean=img_mean,
             img_std=img_std,
             compute_device=compute_device,
+            max_frame_num_to_track=max_frame_num_to_track,
         )
     elif is_str and os.path.isdir(video_path):
         return load_video_frames_from_jpg_images(
@@ -203,6 +217,8 @@ def load_video_frames(
             img_std=img_std,
             async_loading_frames=async_loading_frames,
             compute_device=compute_device,
+            max_frame_num_to_track=max_frame_num_to_track,
+            sort_key=sort_key,
         )
     else:
         raise NotImplementedError(
@@ -218,6 +234,8 @@ def load_video_frames_from_jpg_images(
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
     compute_device=torch.device("cuda"),
+    max_frame_num_to_track=None,
+    sort_key=sort_frames_default,
 ):
     """
     Load the video frames from a directory of JPEG files ("<frame_index>.jpg" format).
@@ -243,9 +261,11 @@ def load_video_frames_from_jpg_images(
     frame_names = [
         p
         for p in os.listdir(jpg_folder)
-        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG", ".png"]
     ]
-    frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+    frame_names.sort(key=sort_key)
+    if max_frame_num_to_track is not None:
+        frame_names = frame_names[:max_frame_num_to_track]
     num_frames = len(frame_names)
     if num_frames == 0:
         raise RuntimeError(f"no images found in {jpg_folder}")
@@ -284,6 +304,7 @@ def load_video_frames_from_video_file(
     img_mean=(0.485, 0.456, 0.406),
     img_std=(0.229, 0.224, 0.225),
     compute_device=torch.device("cuda"),
+    max_frame_num_to_track=None,
 ):
     """Load the video frames from a video file."""
     import decord
@@ -293,10 +314,14 @@ def load_video_frames_from_video_file(
     # Get the original video height and width
     decord.bridge.set_bridge("torch")
     video_height, video_width, _ = decord.VideoReader(video_path).next().shape
-    # Iterate over all frames in the video
+    # Iterate over all (or a part of them) frames in the video
     images = []
-    for frame in decord.VideoReader(video_path, width=image_size, height=image_size):
+    for i, frame in enumerate(
+        decord.VideoReader(video_path, width=image_size, height=image_size)
+    ):
         images.append(frame.permute(2, 0, 1))
+        if max_frame_num_to_track is not None and i + 1 >= max_frame_num_to_track:
+            break
 
     images = torch.stack(images, dim=0).float() / 255.0
     if not offload_video_to_cpu:
@@ -307,6 +332,29 @@ def load_video_frames_from_video_file(
     images -= img_mean
     images /= img_std
     return images, video_height, video_width
+
+
+def load_original_video_frames_from_video_file(
+    video_path,
+    offload_video_to_cpu,
+    compute_device=torch.device("cuda"),
+    max_frame_num_to_track=None,
+):
+    """Load the video frames from a video file as a N x C x H x W float32 tensor."""
+    import decord
+
+    decord.bridge.set_bridge("torch")
+    # Iterate over all (or a part of them) frames in the video
+    images = []
+    for i, frame in enumerate(decord.VideoReader(video_path)):
+        images.append(frame.permute(2, 0, 1))
+        if max_frame_num_to_track is not None and i + 1 >= max_frame_num_to_track:
+            break
+
+    images = torch.stack(images, dim=0).float() / 255.0
+    if not offload_video_to_cpu:
+        images = images.to(compute_device)
+    return images
 
 
 def fill_holes_in_mask_scores(mask, max_area):
@@ -347,3 +395,37 @@ def concat_points(old_point_inputs, new_points, new_labels):
         labels = torch.cat([old_point_inputs["point_labels"], new_labels], dim=1)
 
     return {"point_coords": points, "point_labels": labels}
+
+
+def clean_inference(inference_state, frames_to_keep=100):
+    """
+    Clean at frequent intervals where we only keep the
+    last frames_to_keep non-conditional frame outputs.
+
+    When not cleaning, the inference state is returned as is.
+    """
+    if inference_state["cleaning_counter"] >= frames_to_keep:
+        # Clean
+        keys_to_remove = ["non_cond_frame_outputs"]
+        for obj_idx in inference_state["output_dict_per_obj"]:
+            # print("Cleaning")
+            # print(
+            #     f'Before: {inference_state["output_dict_per_obj"][0]["non_cond_frame_outputs"].keys()}'
+            # )
+            for key in keys_to_remove:
+                if key in inference_state["output_dict_per_obj"][obj_idx]:
+                    frame_indices = sorted(
+                        inference_state["output_dict_per_obj"][obj_idx][key].keys()
+                    )
+                    for frame_idx in frame_indices[:-frames_to_keep]:
+                        inference_state["output_dict_per_obj"][obj_idx][key].pop(
+                            frame_idx, None
+                        )
+            # print(
+            #     f'After: {inference_state["output_dict_per_obj"][0]["non_cond_frame_outputs"].keys()}'
+            # )
+        # Reset counter
+        inference_state["cleaning_counter"] = 0
+
+    inference_state["cleaning_counter"] += 1
+    return inference_state
