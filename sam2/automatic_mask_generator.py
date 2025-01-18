@@ -174,6 +174,7 @@ class SAM2AutomaticMaskGenerator:
         image: np.ndarray,
         clear_memory: bool = False,
         return_backbone_out: bool = False,
+        backbone_out: Optional[dict[str, torch.Tensor]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Generates masks for the given image.
@@ -183,6 +184,7 @@ class SAM2AutomaticMaskGenerator:
           clear_memory (bool): clear gpu memory
           return_backbone_out (bool): return the image backbone_out (only when
             self.crop_n_layers == 0).
+          backbone_out (dict): reuse backbone_out (only when self.crop_n_layers == 0)
 
         Returns:
            list(dict(str, any)): A list over records for masks. Each record is
@@ -203,7 +205,9 @@ class SAM2AutomaticMaskGenerator:
         """
 
         # Generate masks
-        mask_data = self._generate_masks(image)
+        mask_data = self._generate_masks(
+            image, backbone_out=backbone_out if self.crop_n_layers == 0 else None
+        )
 
         # Encode masks
         if self.output_mode == "coco_rle":
@@ -236,7 +240,9 @@ class SAM2AutomaticMaskGenerator:
             return curr_anns, self.predictor.get_backbone_out()
         return curr_anns
 
-    def _generate_masks(self, image: np.ndarray) -> MaskData:
+    def _generate_masks(
+        self, image: np.ndarray, backbone_out: Optional[dict] = None
+    ) -> MaskData:
         orig_size = image.shape[:2]
         crop_boxes, layer_idxs = generate_crop_boxes(
             orig_size, self.crop_n_layers, self.crop_overlap_ratio
@@ -245,7 +251,9 @@ class SAM2AutomaticMaskGenerator:
         # Iterate over image crops
         data = MaskData()
         for crop_box, layer_idx in zip(crop_boxes, layer_idxs):
-            crop_data = self._process_crop(image, crop_box, layer_idx, orig_size)
+            crop_data = self._process_crop(
+                image, crop_box, layer_idx, orig_size, backbone_out=backbone_out
+            )
             data.cat(crop_data)
 
         # Remove duplicate masks between crops
@@ -269,12 +277,13 @@ class SAM2AutomaticMaskGenerator:
         crop_box: List[int],
         crop_layer_idx: int,
         orig_size: Tuple[int, ...],
+        backbone_out: Optional[dict] = None,
     ) -> MaskData:
         # Crop the image and calculate embeddings
         x0, y0, x1, y1 = crop_box
         cropped_im = image[y0:y1, x0:x1, :]
         cropped_im_size = cropped_im.shape[:2]
-        self.predictor.set_image(cropped_im)
+        self.predictor.set_image(cropped_im, backbone_out=backbone_out)
 
         # Get points for this crop
         points_scale = np.array(cropped_im_size)[None, ::-1]

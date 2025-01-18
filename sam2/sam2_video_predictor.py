@@ -304,13 +304,7 @@ class SAM2VideoPredictor(SAM2Base):
         return self.add_new_points_or_box(*args, **kwargs)
 
     @torch.inference_mode()
-    def add_new_mask(
-        self,
-        inference_state,
-        frame_idx,
-        obj_id,
-        mask,
-    ):
+    def add_new_mask(self, inference_state, frame_idx, obj_id, mask, backbone_out=None):
         """Add new mask to a frame."""
         # NOTE: Careful with inference_state["current_frame"], it needs to correspond to the correct frame_idx !!
         obj_idx = self._obj_id_to_idx(inference_state, obj_id)
@@ -371,6 +365,7 @@ class SAM2VideoPredictor(SAM2Base):
             # allows us to enforce non-overlapping constraints on all objects before encoding
             # them into memory.
             run_mem_encoder=False,
+            backbone_out=backbone_out,
         )
         # Add the output to the output dict (to be used as future memory)
         obj_temp_output_dict[storage_key][frame_idx] = current_out
@@ -550,7 +545,6 @@ class SAM2VideoPredictor(SAM2Base):
             # output on the same frame in "non_cond_frame_outputs"
             for frame_idx in obj_output_dict["cond_frame_outputs"]:
                 obj_output_dict["non_cond_frame_outputs"].pop(frame_idx, None)
-
     @torch.inference_mode()
     def propagate_in_video(
         self,
@@ -605,6 +599,7 @@ class SAM2VideoPredictor(SAM2Base):
         image,
         inference_state,
         reverse=False,
+        return_backbone_out=False,
     ):
         obj_ids = inference_state["obj_ids"]
         batch_size = self._get_obj_num(inference_state)
@@ -657,6 +652,11 @@ class SAM2VideoPredictor(SAM2Base):
         _, video_res_masks = self._get_orig_video_res_output(
             inference_state, all_pred_masks
         )
+        if return_backbone_out:
+            _, backbone_out = inference_state["cached_features"].get(
+                frame_idx, (None, None)
+            )
+            return frame_idx, obj_ids, video_res_masks, backbone_out
         return frame_idx, obj_ids, video_res_masks
 
     @torch.inference_mode()

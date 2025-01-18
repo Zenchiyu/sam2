@@ -180,18 +180,6 @@ def sort_frames_default(s):
     return int(os.path.splitext(s)[0])
 
 
-def sort_atari_frames(s) -> tuple[int, int, int, int]:
-    s_ = s.split("_")
-    frame_number, episode_number, day, month = (
-        int(s_[1]),
-        int(s_[-1][:-4]),
-        int(s_[2]),
-        int(s_[3]),
-    )
-
-    return (month, day, episode_number, frame_number)
-
-
 def load_video_frames(
     video_path,
     image_size,
@@ -201,16 +189,12 @@ def load_video_frames(
     async_loading_frames=False,
     compute_device=torch.device("cuda"),
     max_frame_num_to_track=None,
-    atari=False,
+    sort_key=sort_frames_default,
 ):
     """
     Load the video frames from video_path. The frames are resized to image_size as in
     the model and are loaded to GPU if offload_video_to_cpu=False. This is used by the demo.
     """
-    if atari:
-        print("Working on Atari frames")
-    else:
-        print("Working on non Atari frames")
     is_bytes = isinstance(video_path, bytes)
     is_str = isinstance(video_path, str)
     is_mp4_path = is_str and os.path.splitext(video_path)[-1] in [".mp4", ".MP4"]
@@ -234,7 +218,7 @@ def load_video_frames(
             async_loading_frames=async_loading_frames,
             compute_device=compute_device,
             max_frame_num_to_track=max_frame_num_to_track,
-            sort_key=sort_frames_default if not atari else sort_atari_frames,
+            sort_key=sort_key,
         )
     else:
         raise NotImplementedError(
@@ -348,6 +332,29 @@ def load_video_frames_from_video_file(
     images -= img_mean
     images /= img_std
     return images, video_height, video_width
+
+
+def load_original_video_frames_from_video_file(
+    video_path,
+    offload_video_to_cpu,
+    compute_device=torch.device("cuda"),
+    max_frame_num_to_track=None,
+):
+    """Load the video frames from a video file as a N x C x H x W float32 tensor."""
+    import decord
+
+    decord.bridge.set_bridge("torch")
+    # Iterate over all (or a part of them) frames in the video
+    images = []
+    for i, frame in enumerate(decord.VideoReader(video_path)):
+        images.append(frame.permute(2, 0, 1))
+        if max_frame_num_to_track is not None and i + 1 >= max_frame_num_to_track:
+            break
+
+    images = torch.stack(images, dim=0).float() / 255.0
+    if not offload_video_to_cpu:
+        images = images.to(compute_device)
+    return images
 
 
 def fill_holes_in_mask_scores(mask, max_area):
