@@ -190,6 +190,7 @@ def load_video_frames(
     compute_device=torch.device("cuda"),
     max_frame_num_to_track=None,
     sort_key=sort_frames_default,
+    reverse=False,
 ):
     """
     Load the video frames from video_path. The frames are resized to image_size as in
@@ -207,6 +208,7 @@ def load_video_frames(
             img_std=img_std,
             compute_device=compute_device,
             max_frame_num_to_track=max_frame_num_to_track,
+            reverse=reverse,
         )
     elif is_str and os.path.isdir(video_path):
         return load_video_frames_from_jpg_images(
@@ -219,6 +221,7 @@ def load_video_frames(
             compute_device=compute_device,
             max_frame_num_to_track=max_frame_num_to_track,
             sort_key=sort_key,
+            reverse=reverse,
         )
     else:
         raise NotImplementedError(
@@ -236,6 +239,7 @@ def load_video_frames_from_jpg_images(
     compute_device=torch.device("cuda"),
     max_frame_num_to_track=None,
     sort_key=sort_frames_default,
+    reverse=False,
 ):
     """
     Load the video frames from a directory of JPEG files ("<frame_index>.jpg" format).
@@ -264,6 +268,8 @@ def load_video_frames_from_jpg_images(
         if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG", ".png"]
     ]
     frame_names.sort(key=sort_key)
+    if reverse:
+        frame_names = frame_names[::-1]
     if max_frame_num_to_track is not None:
         frame_names = frame_names[:max_frame_num_to_track]
     num_frames = len(frame_names)
@@ -305,6 +311,7 @@ def load_video_frames_from_video_file(
     img_std=(0.229, 0.224, 0.225),
     compute_device=torch.device("cuda"),
     max_frame_num_to_track=None,
+    reverse=False,
 ):
     """Load the video frames from a video file."""
     import decord
@@ -331,6 +338,8 @@ def load_video_frames_from_video_file(
     # normalize by mean and std
     images -= img_mean
     images /= img_std
+    if reverse:
+        images = images[::-1]
     return images, video_height, video_width
 
 

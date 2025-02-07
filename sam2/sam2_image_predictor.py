@@ -134,7 +134,7 @@ class SAM2ImagePredictor:
     @torch.no_grad()
     def set_image_batch(
         self,
-        image_list: List[Union[np.ndarray]],
+        image_list: List[Union[np.ndarray]],  # TODO: backbone_out
     ) -> None:
         """
         Calculates the image embeddings for the provided image batch, allowing

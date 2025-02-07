@@ -44,6 +44,7 @@ class SAM2VideoPredictor(SAM2Base):
     def init_state(
         self,
         initial_frame: torch.Tensor,
+        frame_idx: int,
         video_height: int,  # 210 for Atari
         video_width: int,  # 160 for Atari
         offload_video_to_cpu: bool = False,
@@ -57,9 +58,7 @@ class SAM2VideoPredictor(SAM2Base):
         """
         compute_device = self.device  # device of the model
         inference_state = {}
-        inference_state["images"] = {
-            0: initial_frame.unsqueeze(0)
-        }  # TODO: single tensor ?
+        inference_state["images"] = {frame_idx: initial_frame.unsqueeze(0)}
         inference_state["num_frames"] = num_frames
         # whether to offload the video frames to CPU memory
         # turning on this option saves the GPU memory with only a very small overhead
@@ -97,9 +96,12 @@ class SAM2VideoPredictor(SAM2Base):
         # (we directly use their consolidated outputs during tracking)
         # metadata for each tracking frame (e.g. which direction it's tracked)
         inference_state["frames_tracked_per_obj"] = {}
-        # Warm up the visual backbone and cache the image feature on frame 0
+        # Warm up the visual backbone and cache the image feature on frame frame_idx
         self._get_image_feature(
-            inference_state, frame_idx=0, batch_size=1, backbone_out=backbone_out
+            inference_state,
+            frame_idx=frame_idx,
+            batch_size=1,
+            backbone_out=backbone_out,
         )
         return inference_state
 
@@ -306,7 +308,6 @@ class SAM2VideoPredictor(SAM2Base):
     @torch.inference_mode()
     def add_new_mask(self, inference_state, frame_idx, obj_id, mask, backbone_out=None):
         """Add new mask to a frame."""
-        # NOTE: Careful with inference_state["current_frame"], it needs to correspond to the correct frame_idx !!
         obj_idx = self._obj_id_to_idx(inference_state, obj_id)
         point_inputs_per_frame = inference_state["point_inputs_per_obj"][obj_idx]
         mask_inputs_per_frame = inference_state["mask_inputs_per_obj"][obj_idx]
@@ -545,6 +546,7 @@ class SAM2VideoPredictor(SAM2Base):
             # output on the same frame in "non_cond_frame_outputs"
             for frame_idx in obj_output_dict["cond_frame_outputs"]:
                 obj_output_dict["non_cond_frame_outputs"].pop(frame_idx, None)
+
     @torch.inference_mode()
     def propagate_in_video(
         self,
@@ -588,7 +590,7 @@ class SAM2VideoPredictor(SAM2Base):
         for frame_idx in tqdm(processing_order, desc="propagate in video"):
             image = images[frame_idx]
             frame_idx, obj_ids, video_res_masks = self.move_forward_in_video(
-                image, frame_idx, inference_state, reverse=False
+                frame_idx, image, inference_state, reverse=False
             )
             yield frame_idx, obj_ids, video_res_masks
 
@@ -603,7 +605,6 @@ class SAM2VideoPredictor(SAM2Base):
     ):
         obj_ids = inference_state["obj_ids"]
         batch_size = self._get_obj_num(inference_state)
-        # inference_state["images"][frame_idx] = image.unsqueeze(0)  # TODO: clean/clear ?
         inference_state["images"] = {frame_idx: image.unsqueeze(0)}
 
         pred_masks_per_obj = [None] * batch_size
