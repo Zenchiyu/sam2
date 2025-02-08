@@ -299,9 +299,20 @@ class SAM2AutomaticMaskGenerator:
             del batch_data
         self.predictor.reset_predictor()
 
+        # Artificially increase bounding box size by one pixel if bb is too small
+        # since batched_nms does not work with 1-pixel thin bb's.
+        boxes = data["boxes"].float()
+        if boxes.numel() > 0:
+            min_delta_x = torch.abs(boxes[:, 0] - boxes[:, 2]).min()
+            min_delta_y = torch.abs(boxes[:, 1] - boxes[:, 3]).min()
+            if min_delta_x < 1 or min_delta_x < 1:
+                boxes = boxes.clone()  # to not change data["boxes"]
+                boxes[:, 2] += min_delta_x < 1
+                boxes[:, 3] += min_delta_y < 1
+
         # Remove duplicates within this crop.
         keep_by_nms = batched_nms(
-            data["boxes"].float(),
+            boxes,
             data["iou_preds"],
             torch.zeros_like(data["boxes"][:, 0]),  # categories
             iou_threshold=self.box_nms_thresh,

@@ -90,6 +90,7 @@ def mask_to_box(masks: torch.Tensor):
 
 
 def _load_img_as_tensor(img_path, image_size):
+    # NOTE: processing needs to be similar to the one used in transforms.SAM2Transforms ?
     img_pil = Image.open(img_path)
     img_np = np.array(
         img_pil.convert("RGB").resize((image_size, image_size), Image.NEAREST)
