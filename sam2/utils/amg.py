@@ -156,7 +156,7 @@ def area_from_rle(rle: Dict[str, Any]) -> int:
     return sum(rle["counts"][1::2])
 
 def is_bg_mask_mine(mask, thresh=1.0 / 10.0):
-    return mask.mean((1, 2)) > thresh
+    return (mask.mean((1, 2)) > thresh) | (mask.mean(1).max(1).values > thresh) | (mask.mean(2).max(1).values > thresh)   # TODO: 1/3 not from the entire image
     
 def clear_gpu_memory():
     """
