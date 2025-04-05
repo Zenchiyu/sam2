@@ -176,6 +176,11 @@ class AsyncVideoFrameLoader:
     def __len__(self):
         return len(self.img_paths)
 
+    def __iter__(self):
+        for i in range(len(self.images)):
+            yield self[i]
+
+
 
 def sort_frames_default(s):
     return int(os.path.splitext(s)[0])

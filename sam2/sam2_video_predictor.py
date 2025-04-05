@@ -50,7 +50,7 @@ class SAM2VideoPredictor(SAM2Base):
         offload_video_to_cpu: bool = False,
         offload_state_to_cpu: bool = False,
         num_frames: int = int(1e5),
-        backbone_out: Optional[torch.Tensor] = None,
+        backbone_out: Optional[dict] = None,
     ):
         """
         Initialize an inference state.
@@ -601,7 +601,7 @@ class SAM2VideoPredictor(SAM2Base):
         image,
         inference_state,
         reverse=False,
-        return_backbone_out=False,
+        # return_backbone_out=False,
     ):
         obj_ids = inference_state["obj_ids"]
         batch_size = self._get_obj_num(inference_state)
@@ -653,11 +653,11 @@ class SAM2VideoPredictor(SAM2Base):
         _, video_res_masks = self._get_orig_video_res_output(
             inference_state, all_pred_masks
         )
-        if return_backbone_out:
-            _, backbone_out = inference_state["cached_features"].get(
-                frame_idx, (None, None)
-            )
-            return frame_idx, obj_ids, video_res_masks, backbone_out
+        # if return_backbone_out:
+        #     _, backbone_out = inference_state["cached_features"].get(
+        #         frame_idx, (None, None)
+        #     )
+        #     return frame_idx, obj_ids, video_res_masks, backbone_out
         return frame_idx, obj_ids, video_res_masks
 
     @torch.inference_mode()
