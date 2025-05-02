@@ -182,7 +182,6 @@ class AsyncVideoFrameLoader:
             yield self[i]
 
 
-
 def sort_frames_default(s):
     return int(os.path.splitext(s)[0])
 
@@ -198,7 +197,8 @@ def load_video_frames(
     max_frame_num_to_track=None,
     sort_key=sort_frames_default,
     reverse=False,
-)-> tuple[Any, int, int]:
+    frame_skip=1,
+) -> tuple[Any, int, int]:
     """
     Load the video frames from video_path. The frames are resized to image_size as in
     the model and are loaded to GPU if offload_video_to_cpu=False. This is used by the demo.
@@ -229,6 +229,7 @@ def load_video_frames(
             max_frame_num_to_track=max_frame_num_to_track,
             sort_key=sort_key,
             reverse=reverse,
+            frame_skip=frame_skip,
         )
     else:
         raise NotImplementedError(
@@ -247,6 +248,7 @@ def load_video_frames_from_jpg_images(
     max_frame_num_to_track=None,
     sort_key=sort_frames_default,
     reverse=False,
+    frame_skip=1,
 ):
     """
     Load the video frames from a directory of JPEG files ("<frame_index>.jpg" format).
@@ -275,6 +277,7 @@ def load_video_frames_from_jpg_images(
         if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG", ".png"]
     ]
     frame_names.sort(key=sort_key)
+    frame_names = frame_names[::frame_skip]  # skip frames
     if reverse:
         frame_names = frame_names[::-1]
     if max_frame_num_to_track is not None:
@@ -421,7 +424,12 @@ def clean_inference(inference_state: dict, frames_to_keep: int = 100) -> None:
     When not cleaning, the cleaning_counter key in the inference state is
     incremented by one.
     """
-    assert np.all([key in inference_state for key in ["obj_ids", "cleaning_counter", "output_dict_per_obj"]])
+    assert np.all(
+        [
+            key in inference_state
+            for key in ["obj_ids", "cleaning_counter", "output_dict_per_obj"]
+        ]
+    )
     old_obj_ids = inference_state["obj_ids"]
     if inference_state["cleaning_counter"] >= frames_to_keep:
         # Clean
@@ -440,4 +448,6 @@ def clean_inference(inference_state: dict, frames_to_keep: int = 100) -> None:
         inference_state["cleaning_counter"] = 0
 
     inference_state["cleaning_counter"] += 1
-    assert inference_state["obj_ids"] == old_obj_ids, "Clean inference should not change the number of tracked objects"
+    assert (
+        inference_state["obj_ids"] == old_obj_ids
+    ), "Clean inference should not change the number of tracked objects"
