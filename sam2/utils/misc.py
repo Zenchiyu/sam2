@@ -5,12 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Any
+from typing import Any, Optional
 import warnings
 from threading import Thread
 
 import numpy as np
 import torch
+from torch import Tensor
 from PIL import Image
 from tqdm import tqdm
 
@@ -90,9 +91,13 @@ def mask_to_box(masks: torch.Tensor):
     return bbox_coords
 
 
-def _load_img_as_tensor(img_path, image_size):
+def _load_img_as_tensor(img_path, image_size, transform=None):
     # NOTE: processing needs to be similar to the one used in transforms.SAM2Transforms ?
     img_pil = Image.open(img_path)
+    if transform is not None:
+        img_transformed: np.ndarray = transform(img_pil)
+        img_pil = Image.fromarray(img_transformed)
+
     img_np = np.array(
         img_pil.convert("RGB").resize((image_size, image_size), Image.NEAREST)
     )  # SUPER NOTE
@@ -119,6 +124,7 @@ class AsyncVideoFrameLoader:
         img_std,
         compute_device,
         lazy=True,  # NOTE
+        transform=None,
     ):
         self.img_paths = img_paths
         self.image_size = image_size
@@ -126,14 +132,15 @@ class AsyncVideoFrameLoader:
         self.img_mean = img_mean
         self.img_std = img_std
         # items in `self.images` will be loaded asynchronously
-        self.images = [None] * len(img_paths)
+        self.images: list[Optional[Tensor]] = [None] * len(img_paths)
         # catch and raise any exceptions in the async loading thread
         self.exception = None
         # video_height and video_width be filled when loading the first image
-        self.video_height = None
-        self.video_width = None
+        self.video_height = 0
+        self.video_width = 0
         self.compute_device = compute_device
         self.lazy = lazy
+        self.transform = transform
 
         # load the first frame to fill video_height and video_width and also
         # to cache it (since it's most likely where the user will click)
@@ -161,7 +168,7 @@ class AsyncVideoFrameLoader:
             return img
 
         img, video_height, video_width = _load_img_as_tensor(
-            self.img_paths[index], self.image_size
+            self.img_paths[index], self.image_size, self.transform
         )
         self.video_height = video_height
         self.video_width = video_width
@@ -198,6 +205,7 @@ def load_video_frames(
     sort_key=sort_frames_default,
     reverse=False,
     frame_skip=1,
+    transform=None,
 ) -> tuple[Any, int, int]:
     """
     Load the video frames from video_path. The frames are resized to image_size as in
@@ -218,7 +226,7 @@ def load_video_frames(
             reverse=reverse,
         )
     elif is_str and os.path.isdir(video_path):
-        return load_video_frames_from_jpg_images(
+        images, video_height, video_width = load_video_frames_from_jpg_images(
             video_path=video_path,
             image_size=image_size,
             offload_video_to_cpu=offload_video_to_cpu,
@@ -230,7 +238,9 @@ def load_video_frames(
             sort_key=sort_key,
             reverse=reverse,
             frame_skip=frame_skip,
+            transform=transform,
         )
+        return images, video_height, video_width
     else:
         raise NotImplementedError(
             "Only MP4 video and JPEG folder are supported at this moment"
@@ -249,7 +259,8 @@ def load_video_frames_from_jpg_images(
     sort_key=sort_frames_default,
     reverse=False,
     frame_skip=1,
-):
+    transform=None,
+) -> tuple[Any, int, int]:
     """
     Load the video frames from a directory of JPEG files ("<frame_index>.jpg" format).
 
@@ -258,6 +269,8 @@ def load_video_frames_from_jpg_images(
 
     You can load a frame asynchronously by setting `async_loading_frames` to `True`.
     """
+    video_height = 0
+    video_width = 0
     if isinstance(video_path, str) and os.path.isdir(video_path):
         jpg_folder = video_path
     else:
@@ -297,6 +310,7 @@ def load_video_frames_from_jpg_images(
             img_mean,
             img_std,
             compute_device,
+            transform=transform,
         )
         return lazy_images, lazy_images.video_height, lazy_images.video_width
 
