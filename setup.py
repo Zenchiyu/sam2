@@ -171,4 +171,5 @@ setup(
     python_requires=">=3.10.0",
     ext_modules=get_extensions(),
     cmdclass=cmdclass,
+    package_dir={"sam2": "sam2"},
 )
